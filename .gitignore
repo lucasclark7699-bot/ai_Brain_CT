@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# 数据库文件
+data/*.db
+
+# 配置文件（含 API Key）
+config.yaml
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
+
+# CodeBuddy
+.codebuddy/
+
+# 数据目录
+data/
+
+# 临时文件
+_test.py

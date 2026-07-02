@@ -1,0 +1,8 @@
+streamlit==1.37.0
+openai>=1.30.0
+plotly==5.23.0
+jieba>=0.42.1
+pyyaml>=6.0
+numpy>=1.26.0
+scikit-learn>=1.4.0
+

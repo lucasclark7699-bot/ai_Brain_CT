@@ -18,6 +18,8 @@ from src.panels.star_map import render_star_map
 from src.panels.heatmap import render_heatmap
 from src.panels.decay_curve import render_decay_curve
 from src.panels.alerts_panel import render_alerts_panel
+from src.panels.model_diagnostics import render_model_diagnostics
+from src.panels.model_verification import render_model_verification
 
 
 # ===================== 页面配置 =====================
@@ -77,8 +79,10 @@ def render_sidebar():
                     else:
                         st.error(msg)
 
-                # 创建客户端
-                return APIClientFactory.create_from_config(p)
+                # 创建客户端并保存到 session state
+                client = APIClientFactory.create_from_config(p)
+                st.session_state.api_client = client
+                return client
 
         return None
 
@@ -114,7 +118,9 @@ def main():
         "🌟 记忆星空图",
         "🔥 注意力热力图",
         "📉 记忆衰减曲线",
-        "🚨 预警中心",
+        "🧠 模型诊断",
+        "� 模型验证",
+        "�🚨 预警中心",
     ])
 
     # 对话标签
@@ -143,8 +149,16 @@ def main():
     with tabs[3]:
         render_decay_curve()
 
-    # 预警中心
+    # 模型诊断
     with tabs[4]:
+        render_model_diagnostics()
+
+    # 模型验证
+    with tabs[5]:
+        render_model_verification()
+
+    # 预警中心
+    with tabs[6]:
         render_alerts_panel()
 
     # 页脚

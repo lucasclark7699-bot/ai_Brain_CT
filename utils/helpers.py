@@ -50,6 +50,19 @@ def format_tokens(count: int) -> str:
     return str(count)
 
 
+def sanitize_text(text: str) -> str:
+    """移除或替换非法 Unicode 字符，避免 API 请求体和 JSON 序列化失败。"""
+    if text is None:
+        return ""
+    if not isinstance(text, str):
+        text = str(text)
+    try:
+        text.encode("utf-8")
+        return text
+    except UnicodeEncodeError:
+        return text.encode("utf-8", "replace").decode("utf-8")
+
+
 def sanitize_float(val, default=0.0):
     """清洗 NaN/Inf 为安全值，避免 Plotly JSON 序列化报错"""
     import math

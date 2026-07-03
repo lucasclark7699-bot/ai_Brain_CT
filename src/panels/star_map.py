@@ -20,12 +20,13 @@ def render_star_map():
     # 项目标签过滤
     all_tags = get_all_project_tags()
     tag_filter = st.selectbox("按项目筛选", ["全部"] + all_tags, key="star_tag_filter")
+    project_tag = "" if tag_filter == "全部" else tag_filter
 
     if st.button("刷新星空图"):
         st.rerun()
 
     # 构建图数据
-    graph_data = build_keyword_graph(limit=50)
+    graph_data = build_keyword_graph(limit=50, project_tag=project_tag)
 
     if not graph_data["nodes"]:
         st.info("暂无数据。请先在聊天面板中发送几条消息，系统会自动提取关键词并构建关联网络。")

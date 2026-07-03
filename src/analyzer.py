@@ -78,7 +78,7 @@ def extract_keywords(text: str, top_k: int = 30) -> list[tuple[str, float]]:
     return [(w, freq / max_freq) for w, freq in top_words]
 
 
-def build_keyword_graph(limit: int = 50) -> dict:
+def build_keyword_graph(limit: int = 50, project_tag: str = "") -> dict:
     """
     构建关键词关联网络图数据
     返回 Plotly 力导向图所需的数据格式
@@ -86,8 +86,8 @@ def build_keyword_graph(limit: int = 50) -> dict:
     cfg = get_analysis_config()
     top_k = cfg.get("keyword_top_k", 30)
 
-    keywords_stats = get_all_keywords()
-    pairs = get_keyword_pairs(min_cooccur=1)
+    keywords_stats = get_all_keywords(project_tag)
+    pairs = get_keyword_pairs(min_cooccur=1, project_tag=project_tag)
 
     if not keywords_stats:
         return {"nodes": [], "edges": []}
@@ -237,6 +237,128 @@ def calc_memory_decay(project_tag: str = "", window_size: int = 50) -> list[dict
         })
 
     return results
+
+
+def _tokenize_text(text: str) -> str:
+    return " ".join(jieba.cut(text or ""))
+
+
+def _text_similarity(a: str, b: str) -> float:
+    text_a = _tokenize_text(a)
+    text_b = _tokenize_text(b)
+    if not text_a.strip() or not text_b.strip():
+        return 0.0
+    try:
+        vectorizer = TfidfVectorizer(max_features=300)
+        tfidf = vectorizer.fit_transform([text_a, text_b])
+        sim = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
+        return float(sim)
+    except ValueError:
+        return 0.0
+
+
+def detect_model_symptoms(project_tag: str = "", recent_n: int = 50) -> dict:
+    """检测模型症状：幻觉、上下文断裂、疲惫、记忆混乱"""
+    conversations = get_conversations_ordered(project_tag, limit=recent_n)
+    if len(conversations) < 2:
+        return {
+            "total": len(conversations),
+            "hallucination_count": 0,
+            "context_break_count": 0,
+            "fatigue_score": 0.0,
+            "fatigue_events": 0,
+            "memory_confusion_count": 0,
+            "avg_response_length": 0.0,
+            "avg_similarity": 0.0,
+            "symptom_trend": [],
+        }
+
+    reference_pattern = re.compile(
+        r'(之前|前面|刚刚|上面|刚才|上次|之前说|说过|提到|记得|回忆)'
+        r'.{0,15}(说|讲|提到|讨论|回答|提及)'
+    )
+
+    hallucination_count = 0
+    context_break_count = 0
+    fatigue_events = 0
+    memory_confusion_count = 0
+    similarities = []
+    response_lengths = []
+    output_history = []
+    user_input_map = {}
+    symptom_trend = []
+
+    for i, conv in enumerate(conversations):
+        ai_output = conv.get("ai_output", "") or ""
+        user_input = conv.get("user_input", "") or ""
+        response_length = len(ai_output)
+        response_lengths.append(response_length)
+        output_history.append(ai_output)
+
+        hallucination_flag = False
+        context_break_flag = False
+        memory_confusion_flag = False
+
+        # 重复用户输入检测
+        if user_input:
+            if user_input in user_input_map:
+                prev_output = user_input_map[user_input]
+                if _text_similarity(prev_output, ai_output) < 0.25:
+                    memory_confusion_count += 1
+                    memory_confusion_flag = True
+            user_input_map[user_input] = ai_output
+
+        if i > 0:
+            prev_output = conversations[i - 1].get("ai_output", "") or ""
+            sim = _text_similarity(ai_output, prev_output)
+            similarities.append(sim)
+
+            if sim < 0.25:
+                context_break_count += 1
+                context_break_flag = True
+
+            if reference_pattern.search(ai_output) and sim < 0.15:
+                hallucination_count += 1
+                hallucination_flag = True
+        else:
+            sim = 1.0
+
+        symptom_trend.append({
+            "index": i,
+            "timestamp": conv.get("timestamp", ""),
+            "response_length": response_length,
+            "similarity": sim,
+            "hallucination": hallucination_flag,
+            "context_break": context_break_flag,
+            "memory_confusion": memory_confusion_flag,
+        })
+
+    avg_similarity = float(np.mean(similarities)) if similarities else 0.0
+    avg_response_length = float(np.mean(response_lengths)) if response_lengths else 0.0
+
+    # 疲惫检测：响应长度急剧下降或持续低于历史平均
+    if len(response_lengths) >= 5:
+        last_five = response_lengths[-5:]
+        if last_five[-1] < avg_response_length * 0.5:
+            fatigue_events += 1
+        fatigue_events += sum(1 for length in last_five if length < avg_response_length * 0.6)
+
+    fatigue_score = round(min(1.0, fatigue_events / max(1, len(response_lengths) / 5)), 4)
+
+    for item in symptom_trend:
+        item["fatigue_flag"] = int(item["response_length"] < avg_response_length * 0.6)
+
+    return {
+        "total": len(conversations),
+        "hallucination_count": hallucination_count,
+        "context_break_count": context_break_count,
+        "fatigue_score": fatigue_score,
+        "fatigue_events": fatigue_events,
+        "memory_confusion_count": memory_confusion_count,
+        "avg_response_length": avg_response_length,
+        "avg_similarity": avg_similarity,
+        "symptom_trend": symptom_trend,
+    }
 
 
 def detect_contradictions(recent_n: int = 20) -> list[dict]:

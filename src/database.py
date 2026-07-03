@@ -33,6 +33,9 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             total_tokens INTEGER DEFAULT 0,
             model_name TEXT DEFAULT '',
+            request_model TEXT DEFAULT '',
+            provider_name TEXT DEFAULT '',
+            response_time_ms INTEGER DEFAULT 0,
             logprobs_data TEXT DEFAULT '{}'
         );
 
@@ -65,6 +68,7 @@ def init_db():
             is_active INTEGER DEFAULT 0
         );
 
+        CREATE INDEX IF NOT EXISTS idx_api_configs_active ON api_configs(is_active);
         CREATE INDEX IF NOT EXISTS idx_conv_timestamp ON conversations(timestamp);
         CREATE INDEX IF NOT EXISTS idx_conv_project ON conversations(project_tag);
         CREATE INDEX IF NOT EXISTS idx_kw_conversation ON keywords(conversation_id);
@@ -72,20 +76,36 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_alerts_ack ON alerts(acknowledged);
     """)
     conn.commit()
+    _ensure_conversation_columns(conn)
     conn.close()
+
+
+def _ensure_conversation_columns(conn: sqlite3.Connection):
+    expected_columns = {
+        'request_model': "TEXT DEFAULT ''",
+        'provider_name': "TEXT DEFAULT ''",
+        'response_time_ms': "INTEGER DEFAULT 0",
+    }
+    existing = {row['name'] for row in conn.execute("PRAGMA table_info(conversations);").fetchall()}
+    for column, definition in expected_columns.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE conversations ADD COLUMN {column} {definition}")
 
 
 # ===================== Conversations CRUD =====================
 
 def save_conversation(project_tag: str, user_input: str, ai_output: str,
                       total_tokens: int = 0, model_name: str = "",
-                      logprobs_data: dict = None) -> int:
+                      request_model: str = "", provider_name: str = "",
+                      response_time_ms: int = 0, logprobs_data: dict = None) -> int:
     conn = get_connection()
     cur = conn.execute(
         """INSERT INTO conversations (project_tag, user_input, ai_output,
-           total_tokens, model_name, logprobs_data)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           total_tokens, model_name, request_model, provider_name,
+           response_time_ms, logprobs_data)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (project_tag, user_input, ai_output, total_tokens, model_name,
+         request_model, provider_name, response_time_ms,
          json.dumps(logprobs_data or {}, ensure_ascii=False))
     )
     conn.commit()
@@ -188,32 +208,57 @@ def save_keywords(conversation_id: int, keywords: list[tuple[str, float]]):
     conn.close()
 
 
-def get_all_keywords() -> list[dict]:
+def get_all_keywords(project_tag: str = "") -> list[dict]:
     """获取所有关键词及其统计信息"""
     conn = get_connection()
-    rows = conn.execute(
-        """SELECT keyword, COUNT(*) as freq, AVG(weight) as avg_weight
-           FROM keywords GROUP BY keyword ORDER BY freq DESC"""
-    ).fetchall()
+    if project_tag:
+        rows = conn.execute(
+            """SELECT k.keyword, COUNT(*) as freq, AVG(k.weight) as avg_weight
+               FROM keywords k
+               JOIN conversations c ON c.id = k.conversation_id
+               WHERE c.project_tag = ?
+               GROUP BY k.keyword ORDER BY freq DESC""",
+            (project_tag,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT keyword, COUNT(*) as freq, AVG(weight) as avg_weight
+               FROM keywords GROUP BY keyword ORDER BY freq DESC"""
+        ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def get_keyword_pairs(min_cooccur: int = 1) -> list[dict]:
+def get_keyword_pairs(min_cooccur: int = 1, project_tag: str = "") -> list[dict]:
     """获取关键词共现对（用于星空图连线）"""
     conn = get_connection()
-    rows = conn.execute(
-        """SELECT k1.keyword as source, k2.keyword as target,
-                  COUNT(*) as cooccur
-           FROM keywords k1
-           JOIN keywords k2 ON k1.conversation_id = k2.conversation_id
-           WHERE k1.keyword < k2.keyword
-           GROUP BY k1.keyword, k2.keyword
-           HAVING cooccur >= ?
-           ORDER BY cooccur DESC
-           LIMIT 200""",
-        (min_cooccur,)
-    ).fetchall()
+    if project_tag:
+        rows = conn.execute(
+            """SELECT k1.keyword as source, k2.keyword as target,
+                      COUNT(*) as cooccur
+               FROM keywords k1
+               JOIN keywords k2 ON k1.conversation_id = k2.conversation_id
+               JOIN conversations c ON c.id = k1.conversation_id
+               WHERE k1.keyword < k2.keyword AND c.project_tag = ?
+               GROUP BY k1.keyword, k2.keyword
+               HAVING cooccur >= ?
+               ORDER BY cooccur DESC
+               LIMIT 200""",
+            (project_tag, min_cooccur)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT k1.keyword as source, k2.keyword as target,
+                      COUNT(*) as cooccur
+               FROM keywords k1
+               JOIN keywords k2 ON k1.conversation_id = k2.conversation_id
+               WHERE k1.keyword < k2.keyword
+               GROUP BY k1.keyword, k2.keyword
+               HAVING cooccur >= ?
+               ORDER BY cooccur DESC
+               LIMIT 200""",
+            (min_cooccur,)
+        ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 

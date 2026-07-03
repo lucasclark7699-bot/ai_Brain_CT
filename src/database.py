@@ -1,6 +1,7 @@
 """
 SQLite 数据库层：建表、CRUD 操作、WAL 模式
 """
+import streamlit as st
 import sqlite3
 import json
 import os
@@ -114,6 +115,7 @@ def save_conversation(project_tag: str, user_input: str, ai_output: str,
     return conv_id
 
 
+@st.cache_data(ttl=1, show_spinner=False)
 def get_conversations(project_tag: str = "", limit: int = 100,
                       offset: int = 0) -> list[dict]:
     conn = get_connection()
@@ -132,6 +134,7 @@ def get_conversations(project_tag: str = "", limit: int = 100,
     return [dict(r) for r in rows]
 
 
+@st.cache_data(ttl=3, show_spinner=False)
 def get_conversations_ordered(project_tag: str = "", limit: int = 100) -> list[dict]:
     """按时间正序获取对话（用于衰减曲线）"""
     conn = get_connection()
@@ -150,6 +153,7 @@ def get_conversations_ordered(project_tag: str = "", limit: int = 100) -> list[d
     return [dict(r) for r in rows]
 
 
+@st.cache_data(ttl=5, show_spinner=False)
 def get_conversation_by_id(conv_id: int) -> Optional[dict]:
     conn = get_connection()
     row = conn.execute(
@@ -159,6 +163,7 @@ def get_conversation_by_id(conv_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
+@st.cache_data(ttl=5, show_spinner=False)
 def get_conversations_by_keyword(keyword: str, limit: int = 50) -> list[dict]:
     """根据关键词查找相关对话"""
     conn = get_connection()
@@ -173,6 +178,7 @@ def get_conversations_by_keyword(keyword: str, limit: int = 50) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+@st.cache_data(ttl=5, show_spinner=False)
 def get_all_project_tags() -> list[str]:
     conn = get_connection()
     rows = conn.execute(
@@ -182,6 +188,7 @@ def get_all_project_tags() -> list[str]:
     return [r["project_tag"] for r in rows]
 
 
+@st.cache_data(ttl=5, show_spinner=False)
 def get_conversation_count(project_tag: str = "") -> int:
     conn = get_connection()
     if project_tag:
@@ -208,6 +215,7 @@ def save_keywords(conversation_id: int, keywords: list[tuple[str, float]]):
     conn.close()
 
 
+@st.cache_data(ttl=5, show_spinner=False)
 def get_all_keywords(project_tag: str = "") -> list[dict]:
     """获取所有关键词及其统计信息"""
     conn = get_connection()
@@ -229,6 +237,7 @@ def get_all_keywords(project_tag: str = "") -> list[dict]:
     return [dict(r) for r in rows]
 
 
+@st.cache_data(ttl=5, show_spinner=False)
 def get_keyword_pairs(min_cooccur: int = 1, project_tag: str = "") -> list[dict]:
     """获取关键词共现对（用于星空图连线）"""
     conn = get_connection()
@@ -279,6 +288,7 @@ def save_alert(conversation_id: Optional[int], alert_type: str,
     return aid
 
 
+@st.cache_data(ttl=3, show_spinner=False)
 def get_alerts(acknowledged: int = -1, limit: int = 50) -> list[dict]:
     conn = get_connection()
     if acknowledged >= 0:
@@ -301,6 +311,7 @@ def acknowledge_alert(alert_id: int):
     conn.close()
 
 
+@st.cache_data(ttl=3, show_spinner=False)
 def get_unread_alert_count() -> int:
     conn = get_connection()
     row = conn.execute(

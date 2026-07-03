@@ -3,20 +3,17 @@
 """
 import streamlit as st
 from src.database import (
-    save_conversation, save_keywords, get_conversations, get_all_project_tags,
+    save_conversation, save_keywords, get_all_project_tags,
     get_unread_alert_count,
 )
 from src.api_client import APIClient
 from src.analyzer import extract_keywords, detect_contradictions
 from src.config import get_alert_config
-from utils.helpers import parse_tag_command, format_time, format_tokens, sanitize_text
-import json
+from utils.helpers import parse_tag_command, format_tokens, sanitize_text
 
 
 def render_chat_panel(client: APIClient):
     """渲染聊天面板"""
-    st.header("AI 对话")
-
     # 初始化 session state
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -26,63 +23,40 @@ def render_chat_panel(client: APIClient):
         st.session_state.logprobs_cache = []
     if "pending_tag_input" not in st.session_state:
         st.session_state.pending_tag_input = ""
-
     if "show_tag_panel" not in st.session_state:
         st.session_state.show_tag_panel = False
+    if "chat_scroll" not in st.session_state:
+        st.session_state.chat_scroll = True
 
-    # 顶部状态栏
-    col_tag, col_clear = st.columns([4, 1])
-    with col_tag:
-        current_tag_display = st.session_state.current_tag or "（无标签）"
-        st.caption(f"当前项目标签: **{current_tag_display}**")
-    with col_clear:
-        if st.button("清除对话"):
+    # ---- 紧凑顶部栏：标签 + 清除 ----
+    tag_display = st.session_state.current_tag or "无标签"
+    col1, col2, col3 = st.columns([3, 1, 1])
+    with col1:
+        st.caption(f"🏷 当前标签: **{tag_display}** | 共 {len(st.session_state.messages)} 条消息")
+    with col2:
+        if st.button("🏷 切换标签", key="btn_toggle_tag"):
+            st.session_state.show_tag_panel = not st.session_state.show_tag_panel
+    with col3:
+        if st.button("🗑 清除对话", key="btn_clear"):
             st.session_state.messages = []
             st.rerun()
 
-    # 最近会话摘要
-    recent_history = get_conversations("", limit=5)
-    if recent_history:
-        with st.container():
-            st.markdown("#### 最近会话摘要")
-            for conv in recent_history:
-                time_text = format_time(conv.get("timestamp", ""))
-                tag_text = conv.get("project_tag") or "无标签"
-                user_preview = (conv.get("user_input", "") or "")[:60]
-                st.markdown(f"- `{time_text}` `{tag_text}`: {user_preview}...")
-
-    st.divider()
-
-    chat_container = st.container()
-    with chat_container:
-        for msg in reversed(st.session_state.messages):
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-                if msg.get("meta"):
-                    st.caption(msg["meta"])
-
-    # 聊天输入与标签控制
-    input_col, tag_col = st.columns([9, 1])
-    with input_col:
-        prompt = st.chat_input("输入消息...", key="chat_input_field")
-    with tag_col:
-        if st.button("标签"):
-            st.session_state.show_tag_panel = not st.session_state.show_tag_panel
-
+    # ---- 标签切换面板（折叠） ----
     if st.session_state.show_tag_panel:
-        with st.expander("标签输入", expanded=True):
+        with st.expander("标签管理", expanded=True):
             tag_input = st.text_input(
                 "输入 `/tag 项目名` 切换标签",
                 value=st.session_state.pending_tag_input,
                 key="tag_input_field",
-                placeholder="/tag 项目A"
+                placeholder="/tag 项目A",
+                label_visibility="collapsed",
             )
             if tag_input != st.session_state.pending_tag_input:
                 st.session_state.pending_tag_input = tag_input
 
             tag_name, _ = parse_tag_command(tag_input)
             if tag_name:
-                if st.button(f"切换到标签: {tag_name}"):
+                if st.button(f"✅ 切换到: {tag_name}", key="btn_confirm_tag"):
                     st.session_state.current_tag = tag_name
                     st.session_state.pending_tag_input = ""
                     st.session_state.show_tag_panel = False
@@ -91,13 +65,25 @@ def render_chat_panel(client: APIClient):
             existing_tags = get_all_project_tags()
             if existing_tags:
                 st.caption("已有标签（点击切换）：")
-                cols = st.columns(min(len(existing_tags), 5))
+                cols = st.columns(min(len(existing_tags), 6))
                 for i, tag in enumerate(existing_tags):
-                    with cols[i % 5]:
-                        if st.button(tag, key=f"tag_{tag}"):
+                    with cols[i % 6]:
+                        is_active = tag == st.session_state.current_tag
+                        label = f"✓ {tag}" if is_active else tag
+                        if st.button(label, key=f"tag_{tag}", use_container_width=True):
                             st.session_state.current_tag = tag
                             st.session_state.show_tag_panel = False
                             st.rerun()
+
+    # ---- 聊天消息（正常顺序：旧→新） ----
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if msg.get("meta"):
+                st.caption(msg["meta"])
+
+    # ---- 底部输入框 ----
+    prompt = st.chat_input("输入消息，或输入 /tag 项目名 切换标签...", key="chat_input_field")
 
     if prompt:
         # 解析 /tag 命令

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.database import init_db, get_unread_alert_count
 from src.config import load_config, get_provider_names, get_active_provider
-from src.api_client import APIClientFactory
+from src.api_client import APIClientFactory, APIClient
 from src.panels.chat_panel import render_chat_panel
 from src.panels.star_map import render_star_map
 from src.panels.heatmap import render_heatmap
@@ -79,14 +79,31 @@ def render_sidebar():
                     else:
                         st.error(msg)
 
-                # 创建客户端并保存到 session state
-                client = APIClientFactory.create_from_config(p)
+                # 创建客户端（使用缓存避免每次渲染重建）
+                client = _get_cached_client(
+                    provider_name=p.get("name", ""),
+                    base_url=p.get("base_url", ""),
+                    api_key=p.get("api_key", ""),
+                    model=p.get("model", ""),
+                )
                 st.session_state.api_client = client
                 return client
 
         return None
 
     return None
+
+
+# ===================== API 客户端缓存 =====================
+@st.cache_resource(show_spinner=False)
+def _get_cached_client(provider_name: str, base_url: str, api_key: str, model: str) -> APIClient:
+    """缓存 API 客户端，避免每次 render 重建"""
+    return APIClient(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        provider_name=provider_name,
+    )
 
 
 # ===================== 顶部预警条 =====================

@@ -2,6 +2,7 @@
 配置加载模块：读取 config.yaml，管理 API 供应商配置
 """
 import os
+import streamlit as st
 import yaml
 
 
@@ -9,8 +10,9 @@ CONFIG_DIR = os.path.dirname(os.path.dirname(__file__))
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.yaml")
 
 
+@st.cache_data(ttl=30, show_spinner=False)
 def load_config() -> dict:
-    """加载 YAML 配置文件"""
+    """加载 YAML 配置文件（缓存 30 秒）"""
     if not os.path.exists(CONFIG_PATH):
         return {"providers": [], "active_provider": 0, "analysis": {}, "alert": {}}
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:

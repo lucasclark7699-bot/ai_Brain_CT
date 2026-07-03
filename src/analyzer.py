@@ -2,6 +2,7 @@
 分析引擎：jieba 关键词提取、注意力计算、记忆衰减评估、矛盾检测
 """
 import re
+import streamlit as st
 import jieba
 import numpy as np
 from collections import Counter, defaultdict
@@ -78,6 +79,7 @@ def extract_keywords(text: str, top_k: int = 30) -> list[tuple[str, float]]:
     return [(w, freq / max_freq) for w, freq in top_words]
 
 
+@st.cache_data(ttl=10, show_spinner=False)
 def build_keyword_graph(limit: int = 50, project_tag: str = "") -> dict:
     """
     构建关键词关联网络图数据
@@ -172,6 +174,7 @@ def calc_attention_scores(text: str, logprobs: list = None) -> list[dict]:
     return [{"word": w, "score": round(s, 4)} for w, s in zip(words, scores)]
 
 
+@st.cache_data(ttl=10, show_spinner=False)
 def calc_memory_decay(project_tag: str = "", window_size: int = 50) -> list[dict]:
     """
     计算记忆衰减曲线
@@ -257,6 +260,7 @@ def _text_similarity(a: str, b: str) -> float:
         return 0.0
 
 
+@st.cache_data(ttl=10, show_spinner=False)
 def detect_model_symptoms(project_tag: str = "", recent_n: int = 50) -> dict:
     """检测模型症状：幻觉、上下文断裂、疲惫、记忆混乱"""
     conversations = get_conversations_ordered(project_tag, limit=recent_n)
@@ -361,6 +365,7 @@ def detect_model_symptoms(project_tag: str = "", recent_n: int = 50) -> dict:
     }
 
 
+@st.cache_data(ttl=10, show_spinner=False)
 def detect_contradictions(recent_n: int = 20) -> list[dict]:
     """
     检测矛盾与潜在幻觉

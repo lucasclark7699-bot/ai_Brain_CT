@@ -12,10 +12,16 @@ from src.database import get_all_project_tags
 from utils.helpers import format_time, sanitize_float
 
 
+@st.cache_data(ttl=300)
+def _cached_calc_decay(project_tag: str, window_size: int):
+    """记忆衰减计算（TF-IDF 相似度重计算，缓存避免切 tab 反复算）"""
+    return calc_memory_decay(project_tag, window_size=window_size)
+
+
 def render_decay_curve():
     """渲染记忆衰减曲线"""
-    st.header("记忆衰减曲线")
-    st.caption("追踪 AI 的记忆准确度随时间的变化趋势")
+    st.header("语义连贯性曲线")
+    st.caption("追踪每条对话与历史上下文的语义连贯度。断崖式下跌通常意味着话题大幅切换，而非“记忆衰减”。")
 
     cfg = get_analysis_config()
     danger_threshold = cfg.get("memory_danger_threshold", 0.3)
@@ -30,7 +36,7 @@ def render_decay_curve():
     with col1:
         window = st.slider("分析窗口", 10, 100, 50, 5)
 
-    decay_data = calc_memory_decay(project_tag, window_size=window)
+    decay_data = _cached_calc_decay(project_tag, window_size=window)
 
     if not decay_data or len(decay_data) < 2:
         st.info("需要至少 2 条对话数据才能生成衰减曲线。请在聊天面板中多发送几条消息。")
@@ -46,7 +52,7 @@ def render_decay_curve():
         row_heights=[0.7, 0.3],
         shared_xaxes=True,
         vertical_spacing=0.08,
-        subplot_titles=("记忆准确度趋势", "危险区间标记"),
+        subplot_titles=("语义连贯度趋势", "话题切换标记"),
     )
 
     # 主曲线
@@ -55,7 +61,7 @@ def render_decay_curve():
             x=indices,
             y=accuracies,
             mode="lines+markers",
-            name="记忆准确度",
+            name="语义连贯度",
             line=dict(color="#42A5F5", width=2.5),
             marker=dict(
                 size=8,
@@ -67,7 +73,7 @@ def render_decay_curve():
                 ],
                 showscale=True,
                 colorbar=dict(
-                    title="准确度",
+                    title="连贯度",
                     len=0.5,
                     y=0.8,
                 ),
@@ -83,7 +89,7 @@ def render_decay_curve():
         y=danger_threshold,
         line_dash="dash",
         line_color="#F44336",
-        annotation_text=f"危险阈值 ({danger_threshold})",
+        annotation_text=f"话题切换阈值 ({danger_threshold})",
         annotation_position="top right",
         row=1, col=1,
     )
@@ -134,20 +140,20 @@ def render_decay_curve():
     # 统计面板
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("平均准确度", f"{avg_accuracy:.3f}")
+        st.metric("平均连贯度", f"{avg_accuracy:.3f}")
     with col2:
-        st.metric("最低准确度", f"{min_accuracy:.3f}",
+        st.metric("最低连贯度", f"{min_accuracy:.3f}",
                   delta=f"对话 #{min_idx}", delta_color="off")
     with col3:
         st.metric("趋势", trend, delta_color="normal" if trend == "上升" else "inverse")
     with col4:
         danger_count = sum(1 for d in decay_data if sanitize_float(d["accuracy"], 1.0) < danger_threshold)
-        st.metric("危险点", danger_count, delta=f"阈值 {danger_threshold}")
+        st.metric("话题切换点", danger_count, delta=f"阈值 {danger_threshold}")
 
     # 时间滑块回放
     st.divider()
-    st.subheader("思维回放")
-    st.caption("拖动滑块，查看 AI 在各阶段对话中的表现")
+    st.subheader("连贯度回放")
+    st.caption("拖动滑块，查看各阶段对话与历史上下文的语义连贯度")
 
     if len(decay_data) > 2:
         replay_idx = st.slider("选择对话序号", 0, len(decay_data) - 1, len(decay_data) - 1)
@@ -162,7 +168,7 @@ def render_decay_curve():
             )
             st.markdown(
                 f"**对话 #{d['index']}** | 时间: {format_time(d['timestamp'])} | "
-                f"记忆准确度: <span style='color:{accuracy_color};font-weight:bold'>{acc:.3f}</span>",
+                f"语义连贯度: <span style='color:{accuracy_color};font-weight:bold'>{acc:.3f}</span>",
                 unsafe_allow_html=True,
             )
             st.caption(f"摘要: {d['preview']}...")

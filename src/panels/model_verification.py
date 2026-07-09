@@ -8,14 +8,15 @@ from src.api_client import APIClient
 from utils.helpers import format_tokens, sanitize_float
 
 
-def _extract_number(text: str) -> int | None:
+def _extract_number(text: str, prefer_last: bool = False) -> int | None:
     if not text:
         return None
     nums = re.findall(r"\d+", text)
     if not nums:
         return None
+    target = nums[-1] if prefer_last else nums[0]
     try:
-        return int(nums[0])
+        return int(target)
     except ValueError:
         return None
 
@@ -53,6 +54,29 @@ def _extract_chinese_number(text: str) -> int | None:
     return None
 
 
+def _extract_chinese_numbers(text: str) -> list[int]:
+    """按出现顺序提取文本中所有中文数字（0-15），用于「火七木六」这类回答。"""
+    text = text or ""
+    result = []
+    mapping = {
+        "零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+        "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+        "十一": 11, "十二": 12, "十三": 13, "十四": 14, "十五": 15,
+    }
+    i = 0
+    while i < len(text):
+        matched = False
+        for word, value in mapping.items():
+            if text.startswith(word, i):
+                result.append(value)
+                i += len(word)
+                matched = True
+                break
+        if not matched:
+            i += 1
+    return result
+
+
 def _format_server_info(headers) -> str:
     if not headers:
         return "未知"
@@ -78,7 +102,8 @@ def _extract_two_numbers(text: str) -> tuple[int | None, int | None]:
 
     numbers = re.findall(r"\d+", text)
     if len(numbers) >= 2:
-        return int(numbers[0]), int(numbers[1])
+        # 取最后两个数字，更可能是模型给出的最终答案（尤其推理模型会把结论放末尾）
+        return int(numbers[-2]), int(numbers[-1])
     return None, None
 
 
@@ -158,12 +183,14 @@ def _score_verification(results: dict) -> dict:
         reasons.append(
             f"数数测试失败：期望 {results['counting_test']['expected']}，实际 {results['counting_test']['actual']}。"
         )
+        if results["counting_test"].get("finish_reason") == "length":
+            reasons.append("数数测试响应被长度截断（finish_reason=length），可能是 max_tokens 不足导致正文为空。")
 
     if results["context_test"]["pass"]:
         score += 30
     else:
         reasons.append(
-            f"上下文记忆测试失败：期望 {results['context_test']['expected']}，实际 {results['context_test']['actual']}。"
+            f"多步指令遵循测试失败：期望 {results['context_test']['expected']}，实际 {results['context_test']['actual']}。"
         )
 
     server_info = results.get("server_info", "") or ""
@@ -206,6 +233,7 @@ def _chat_with_raw_response(client: APIClient, messages: list[dict], max_tokens:
         "headers": headers,
         "elapsed": elapsed,
         "error": response.error,
+        "finish_reason": response.finish_reason,
     }
 
 
@@ -216,7 +244,7 @@ def verify_model_endpoint(client: APIClient) -> dict:
     consistency = _chat_with_raw_response(
         client,
         [{"role": "user", "content": "你好"}],
-        max_tokens=5,
+        max_tokens=256,
     )
 
     returned_model = consistency["returned_model"]
@@ -245,13 +273,19 @@ def verify_model_endpoint(client: APIClient) -> dict:
     counting = _chat_with_raw_response(
         client,
         [{"role": "user", "content": counting_prompt}],
-        max_tokens=15,
+        max_tokens=512,
     )
     first_counting_answer = counting["content"].strip()
     fire_actual, wood_actual = _extract_two_numbers(first_counting_answer)
     if fire_actual is None or wood_actual is None:
-        fire_actual = fire_actual if fire_actual is not None else _extract_chinese_number(first_counting_answer)
-        wood_actual = wood_actual if wood_actual is not None else _extract_chinese_number(first_counting_answer)
+        # 修复：原先两处都调 _extract_chinese_number 会重复抓到同一个字；
+        # 改为按出现顺序提取两个中文数字，分别赋给火/木
+        cn_nums = _extract_chinese_numbers(first_counting_answer)
+        ci = 0
+        if fire_actual is None and ci < len(cn_nums):
+            fire_actual = cn_nums[ci]; ci += 1
+        if wood_actual is None and ci < len(cn_nums):
+            wood_actual = cn_nums[ci]; ci += 1
 
     retry_fire_answer = None
     retry_wood_answer = None
@@ -269,7 +303,7 @@ def verify_model_endpoint(client: APIClient) -> dict:
                         f"文本：{'火' * counting_fire}"
                     )
                 }],
-                max_tokens=10,
+                max_tokens=256,
             )
             retry_fire_answer = retry_fire["content"].strip()
             retry_fire_actual = _extract_number(retry_fire_answer)
@@ -287,7 +321,7 @@ def verify_model_endpoint(client: APIClient) -> dict:
                         f"文本：{'木' * counting_wood}"
                     )
                 }],
-                max_tokens=10,
+                max_tokens=256,
             )
             retry_wood_answer = retry_wood["content"].strip()
             retry_wood_actual = _extract_number(retry_wood_answer)
@@ -299,6 +333,7 @@ def verify_model_endpoint(client: APIClient) -> dict:
         "expected": f"{counting_fire}/{counting_wood}",
         "actual": f"{fire_actual}/{wood_actual}",
         "pass": counting_pass,
+        "finish_reason": counting.get("finish_reason"),
         "raw": (
             f"第一次: {first_counting_answer}"
             + (f" | retry_fire: {retry_fire_answer}" if retry_fire_answer is not None else "")
@@ -306,22 +341,14 @@ def verify_model_endpoint(client: APIClient) -> dict:
         ),
     }
 
-    # 3. 上下文记忆测试
-    context_messages = [
-        {"role": "user", "content": "记住数字 7"},
-        {"role": "user", "content": "记住数字 3"},
-    ]
-    for message in context_messages:
-        _chat_with_raw_response(client, message if isinstance(message, list) else [message], max_tokens=5)
-
+    # 3. 多步指令遵循测试（无状态 API 无法跨请求记忆，此测试实际考察模型能否遵循
+    #    “先记下若干数字并做算术”的多步指令；原标注“上下文记忆”会误导，故改判为指令遵循）
     context_prompt = [
-        {"role": "user", "content": "记住数字 7"},
-        {"role": "user", "content": "记住数字 3"},
-        {"role": "user", "content": "我刚才让你记住的两个数字之和是多少？只输出数字。"},
+        {"role": "user", "content": "请完成多步任务：第一步记住数字 7，第二步记住数字 3，第三步只输出这两个数字之和。不要输出其他内容。"},
     ]
-    context_result = _chat_with_raw_response(client, context_prompt, max_tokens=10)
+    context_result = _chat_with_raw_response(client, context_prompt, max_tokens=256)
     context_answer = context_result["content"].strip()
-    context_actual = _extract_number(context_answer)
+    context_actual = _extract_number(context_answer, prefer_last=True)
     context_pass = context_actual == 10
     context_test = {
         "expected": 10,
@@ -352,7 +379,7 @@ def verify_model_endpoint(client: APIClient) -> dict:
 
 def render_model_verification():
     st.header("模型真伪验证")
-    st.caption("通过请求/返回一致性、能力测试、上下文记忆和响应指纹，给出综合判定。")
+    st.caption("通过请求/返回一致性、能力测试、多步指令遵循和响应指纹，给出综合判定。")
 
     if "verification_result" not in st.session_state:
         st.session_state.verification_result = None
@@ -383,7 +410,7 @@ def render_model_verification():
             st.subheader("能力测试")
             st.write(f"数数测试: {'通过' if result['counting_test']['pass'] else '失败'}")
             st.write(f"回答: {result['counting_test']['raw']}")
-            st.write(f"上下文记忆: {'通过' if result['context_test']['pass'] else '失败'}")
+            st.write(f"多步指令遵循: {'通过' if result['context_test']['pass'] else '失败'}")
             st.write(f"回答: {result['context_test']['raw']}")
 
         with col3:

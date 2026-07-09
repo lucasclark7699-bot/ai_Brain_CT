@@ -418,7 +418,7 @@ def detect_contradictions(recent_n: int = 20) -> list[dict]:
                     pass
 
     # 检测记忆断崖：衰减曲线连续下降
-    decay_results = calc_memory_decay(recent_n)
+    decay_results = calc_memory_decay(project_tag="", window_size=recent_n)
     danger_threshold = cfg.get("memory_danger_threshold", 0.3)
 
     consecutive_low = 0
@@ -430,8 +430,8 @@ def detect_contradictions(recent_n: int = 20) -> list[dict]:
 
         if consecutive_low >= 3:
             alerts.append({
-                "type": "memory_danger",
-                "description": f"检测到记忆衰减连续低于阈值，AI 可能正在遗忘早期需求，幻觉风险上升。",
+                "type": "topic_drift",
+                "description": f"检测到连续多条对话与历史语义连贯度偏低，可能发生了大幅话题切换或上下文断裂，需关注。",
                 "severity": "warning",
                 "conv_id": None,
             })

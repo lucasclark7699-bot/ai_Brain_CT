@@ -10,6 +10,18 @@ from src.analyzer import detect_model_symptoms
 from utils.helpers import format_time, sanitize_float
 
 
+@st.cache_data(ttl=300)
+def _cached_get_conversations(limit: int):
+    """读取对话记录（缓存，避免切 tab / 重渲染反复查库）"""
+    return get_conversations(limit=limit)
+
+
+@st.cache_data(ttl=300)
+def _cached_detect_symptoms(recent_n: int):
+    """模型症状分析（TF-IDF 相似度 O(n²) 重计算，缓存避免反复算）"""
+    return detect_model_symptoms(recent_n=recent_n)
+
+
 def _detect_origin_from_record(conv: dict) -> tuple[str, str]:
     request_model = (conv.get("request_model") or "").lower()
     provider_name = (conv.get("provider_name") or "").lower()
@@ -34,7 +46,7 @@ def render_model_diagnostics():
     st.header("模型诊断")
     st.caption("基于历史对话分析模型来源、响应性能和潜在异常行为。")
 
-    conversations = get_conversations(limit=200)
+    conversations = _cached_get_conversations(limit=200)
     if not conversations:
         st.info("暂无对话数据。请先在聊天面板中发送消息。")
         return
@@ -49,7 +61,7 @@ def render_model_diagnostics():
         _detect_origin_from_record(c)[0] for c in conversations
     ]
     origin_counter = Counter(origin_labels)
-    symptoms = detect_model_symptoms(recent_n=50)
+    symptoms = _cached_detect_symptoms(recent_n=50)
     suspicious_count = origin_counter.get("疑似套壳模型", 0) + origin_counter.get("疑似非官方模型", 0)
     reliability = "高" if suspicious_count == 0 else ("中" if suspicious_count <= 3 else "低")
     reliability_color = "#4CAF50" if reliability == "高" else ("#FF9800" if reliability == "中" else "#F44336")

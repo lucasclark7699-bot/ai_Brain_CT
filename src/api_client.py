@@ -35,6 +35,8 @@ class APIClient:
         self.client = OpenAI(
             base_url=base_url,
             api_key=api_key,
+            timeout=15,          # 单次请求最长等待 15 秒，超时即报错不再干等
+            max_retries=1,       # 失败仅重试 1 次，避免叠加超时拖垮体验
         )
 
     def chat(self, messages: list[dict],
@@ -135,10 +137,17 @@ class APIClient:
                     choice = choices[0]
 
             content = ""
+            reasoning = ""
             if choice and isinstance(choice, dict):
                 message = choice.get("message", {})
                 if isinstance(message, dict):
                     content = message.get("content", "") or ""
+                    # DeepSeek 等推理模型把思考过程放在 reasoning_content，
+                    # 正文可能为空，此时拿推理内容兜底，避免能力测试误判失败
+                    reasoning = message.get("reasoning_content", "") or ""
+
+            if not content and reasoning:
+                content = reasoning
 
             logprobs_data = None
             if enable_logprobs and self.supports_logprobs and choice and choice.get("logprobs"):

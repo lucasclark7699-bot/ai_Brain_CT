@@ -11,13 +11,19 @@ from utils.helpers import format_time, sanitize_float
 import json
 
 
+@st.cache_data(ttl=300)
+def _cached_get_conversations(limit: int):
+    """读取对话记录（缓存，避免切 tab / 重渲染反复查库）"""
+    return get_conversations(limit=limit)
+
+
 def render_heatmap():
     """渲染注意力热力图"""
     st.header("注意力热力图")
     st.caption("词级别关注度监控 —— 看看 AI 到底在关注哪些词")
 
     # 获取对话列表
-    conversations = get_conversations(limit=50)
+    conversations = _cached_get_conversations(limit=50)
     if not conversations:
         st.info("暂无对话数据。请先在聊天面板中发送消息。")
         return

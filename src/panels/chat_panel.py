@@ -148,11 +148,14 @@ def render_chat_panel(client: APIClient):
             logprobs_data=logprobs_data,
         )
 
-        # 提取并保存关键词
+        # 提取并保存关键词（就近兜底：分析失败不影响主流程）
         if ai_content and "[错误]" not in ai_content:
-            keywords = extract_keywords(f"{prompt} {ai_content}")
-            if keywords:
-                save_keywords(conv_id, keywords)
+            try:
+                keywords = extract_keywords(f"{prompt} {ai_content}")
+                if keywords:
+                    save_keywords(conv_id, keywords)
+            except Exception:
+                pass
 
         # 存储到 session
         st.session_state.messages.append({
@@ -169,13 +172,16 @@ def render_chat_panel(client: APIClient):
                 "logprobs": logprobs_data,
             })
 
-        # 预警检测
-        alert_cfg = get_alert_config()
-        if alert_cfg.get("enabled", True) and alert_cfg.get("auto_scan_on_new_message", True):
-            alerts = detect_contradictions(recent_n=20)
-            if alerts:
-                alert_count = get_unread_alert_count()
-                if alert_count > 0:
-                    st.warning(f"检测到 {alert_count} 条新预警，请查看「预警中心」")
+        # 预警检测（就近兜底：自动扫描失败不影响对话主流程）
+        try:
+            alert_cfg = get_alert_config()
+            if alert_cfg.get("enabled", True) and alert_cfg.get("auto_scan_on_new_message", True):
+                alerts = detect_contradictions(recent_n=20)
+                if alerts:
+                    alert_count = get_unread_alert_count()
+                    if alert_count > 0:
+                        st.warning(f"检测到 {alert_count} 条新预警，请查看「预警中心」")
+        except Exception:
+            pass
 
         st.rerun()

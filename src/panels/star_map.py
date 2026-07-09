@@ -12,6 +12,16 @@ from src.database import get_conversations_by_keyword, get_all_project_tags
 from utils.helpers import format_time, sanitize_float
 
 
+@st.cache_data(ttl=300)
+def _cached_build_graph_and_layout(limit: int, project_tag: str):
+    """构建关键词关联图 + 力导向布局（重计算，缓存避免切 tab 反复算）"""
+    graph_data = build_keyword_graph(limit=limit, project_tag=project_tag)
+    if not graph_data.get("nodes"):
+        return graph_data, {}
+    positions = _force_directed_layout(graph_data["nodes"], graph_data["edges"])
+    return graph_data, positions
+
+
 def render_star_map():
     """渲染记忆星空图（关键词关联网络）"""
     st.header("记忆星空图")
@@ -23,10 +33,11 @@ def render_star_map():
     project_tag = "" if tag_filter == "全部" else tag_filter
 
     if st.button("刷新星空图"):
+        _cached_build_graph_and_layout.clear()
         st.rerun()
 
-    # 构建图数据
-    graph_data = build_keyword_graph(limit=50, project_tag=project_tag)
+    # 构建图数据（带缓存，避免切 tab 反复重算力导向布局）
+    graph_data, positions = _cached_build_graph_and_layout(limit=50, project_tag=project_tag)
 
     if not graph_data["nodes"]:
         st.info("暂无数据。请先在聊天面板中发送几条消息，系统会自动提取关键词并构建关联网络。")
@@ -34,9 +45,6 @@ def render_star_map():
 
     nodes = graph_data["nodes"]
     edges = graph_data["edges"]
-
-    # 使用力导向布局计算节点位置
-    positions = _force_directed_layout(nodes, edges)
 
     # 构建 Plotly 网络图
     fig = go.Figure()

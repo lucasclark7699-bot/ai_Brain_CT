@@ -13,7 +13,7 @@ from utils.helpers import format_time, get_severity_color, get_severity_icon
 def render_alerts_panel():
     """渲染预警面板"""
     st.header("预警中心")
-    st.caption("AI 行为异常检测 —— 引用错误、逻辑矛盾、记忆断崖")
+    st.caption("AI 行为异常检测 —— 引用错误、逻辑矛盾、话题切换")
 
     alert_cfg = get_alert_config()
 
@@ -62,20 +62,21 @@ def render_alerts_panel():
         key="alert_filter",
     )
 
+    # 预警列表（按筛选条件一次性取全，避免饼图与列表数对不上 / 重复查库）
     if filter_option == "未读预警":
-        alerts = get_alerts(acknowledged=0, limit=50)
+        alerts = get_alerts(acknowledged=0, limit=1000)
     elif filter_option == "已读预警":
-        alerts = get_alerts(acknowledged=1, limit=50)
+        alerts = get_alerts(acknowledged=1, limit=1000)
     else:
-        alerts = get_alerts(limit=50)
+        alerts = get_alerts(limit=1000)
 
     if not alerts:
         st.success("暂无预警记录，AI 表现正常。")
         return
 
-    # 按严重程度统计
+    # 按严重程度统计（直接基于当前筛选结果，保证与下方列表完全一致）
     severity_stats = {}
-    for a in get_alerts(limit=1000):
+    for a in alerts:
         sev = a["severity"]
         severity_stats[sev] = severity_stats.get(sev, 0) + 1
 

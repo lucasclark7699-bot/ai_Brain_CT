@@ -4,7 +4,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![Streamlit](https://img.shields.io/badge/streamlit-1.37.0-FF4B4B.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
+![License](https://img.shields.io/badge/license-GPL--3.0-green.svg)
 ![Built with WorkBuddy](https://img.shields.io/badge/built%20with-WorkBuddy-8A2BE2.svg)
 
 ## 项目简介
@@ -121,10 +121,14 @@ ai_Brain_CT/
 
 ## 🤝 致谢 / Credits
 
-本项目由 **软件开发团队**（交付总监：齐活林 / Qi，由 [WorkBuddy](https://www.codebuddy.cn/) AI 编程助手驱动）辅助设计与交付。
+本项目由 **lucasclark7699-bot** 与 **[WorkBuddy](https://www.codebuddy.cn/) AI 编程助手**（软件开发团队 · 交付总监 齐活林 / Qi）**共同设计与开发**。
 
 想体验同款 AI 编程助手？👉 [WorkBuddy](https://www.codebuddy.cn/)
 
 ## 📄 License
 
-MIT
+本项目采用 **[GPL-3.0](LICENSE)** 开源协议。
+
+Copyright (C) 2026 lucasclark7699-bot
+
+> GPL-3.0 是 Copyleft 协议：任何基于本项目的衍生作品在分发时也必须以 GPL-3.0 开源，需保留版权声明并公开源码。
